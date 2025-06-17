@@ -6,4 +6,8 @@ aiomysql
 python-jose
 passlib[bcrypt]
 python-multipart
+pytest
+httpx
+pytest-cov
+factory-boy
 

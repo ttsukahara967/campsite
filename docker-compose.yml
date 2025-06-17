@@ -7,7 +7,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./app:/app
+      - ./app:/app  # ここでホストの app/ をコンテナの /app にマウント
+    environment:
+      - PYTHONPATH=/
     env_file:
       - .env
     depends_on:

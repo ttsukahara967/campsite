@@ -3,11 +3,21 @@ from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from models.user import DBUser
+from app.models.user import DBUser
 from database.session import get_db
 from core.config import SECRET_KEY, ALGORITHM
+from passlib.context import CryptContext
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/admin/token")
+
+# /app/core/security.py
+
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()

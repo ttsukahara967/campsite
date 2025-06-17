@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from routers import public, admin
-from database.session import Base, engine
+from app.database.session import Base, engine
 
 app = FastAPI()
 
