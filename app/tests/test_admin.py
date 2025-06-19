@@ -1,40 +1,70 @@
-# tests/test_admin.py
 import pytest
-from tests.factories import UserFactory
 
-def test_admin_create_user(client, db):
-    response = client.post("/admin/users/", json={
+@pytest.mark.asyncio
+async def test_admin_create_campsite(async_client):
+    # 1. 管理者ユーザーを作成
+    await async_client.post("/api/register", json={
         "username": "adminuser",
-        "email": "admin@example.com",
-        "password": "secure123"
+        "password": "adminpass"
     })
-    assert response.status_code == 200
-    data = response.json()
-    assert data["email"] == "admin@example.com"
-
-def test_admin_get_users(client, db):
-    UserFactory.create_batch(3)
-    response = client.get("/admin/users/")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
-
-# tests/test_admin.py
-
-def test_admin_create_user_with_token(auth_client):
-    response = auth_client.post("/admin/users/", json={
-        "username": "newuser",
-        "email": "newuser@example.com",
-        "password": "testpass123"
+    # 2. トークン取得
+    resp = await async_client.post("/api/admin/token", data={
+        "username": "adminuser",
+        "password": "adminpass"
     })
-    assert response.status_code == 200
-    data = response.json()
-    assert data["email"] == "newuser@example.com"
+    assert resp.status_code == 200
+    token = resp.json()["access_token"]
+    # 3. 管理APIにトークン付きでPOST
+    headers = {"Authorization": f"Bearer {token}"}
+    data = {
+        "name": "富士山キャンプ場",
+        "description": "絶景！",
+        "location": "山梨県富士吉田市",
+        "prefecture": "山梨",
+        "price_min": 3000,
+        "price_max": 7000,
+        "pet_friendly": True,
+        "tags": ["富士山", "絶景"]
+    }
+    resp = await async_client.post("/api/admin/campsites", json=data, headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "富士山キャンプ場"
 
-def test_admin_list_users_with_token(auth_client, db):
-    response = auth_client.get("/admin/users/")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
+@pytest.mark.asyncio
+async def test_admin_update_and_delete_campsite(async_client):
+    # 管理者ユーザーを作成しログイン
+    await async_client.post("/api/register", json={
+        "username": "adminuser2",
+        "password": "adminpass2"
+    })
+    resp = await async_client.post("/api/admin/token", data={
+        "username": "adminuser2",
+        "password": "adminpass2"
+    })
+    token = resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    # キャンプ場登録
+    post_data = {
+        "name": "テストキャンプ場",
+        "description": "テスト説明",
+        "location": "東京都",
+        "prefecture": "東京",
+        "price_min": 2000,
+        "price_max": 4000,
+        "pet_friendly": False,
+        "tags": ["テスト"]
+    }
+    resp = await async_client.post("/api/admin/campsites", json=post_data, headers=headers)
+    campsite_id = resp.json()["id"]
 
-def test_admin_unauthorized_access(client):
-    response = client.get("/admin/users/")
-    assert response.status_code == 401  # 認証されていない
+    # 更新
+    update_data = post_data.copy()
+    update_data["name"] = "更新後キャンプ場"
+    resp = await async_client.put(f"/api/admin/campsites/{campsite_id}", json=update_data, headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "更新後キャンプ場"
+
+    # 削除
+    resp = await async_client.delete(f"/api/admin/campsites/{campsite_id}", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["message"] == "Deleted"

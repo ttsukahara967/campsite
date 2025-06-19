@@ -1,71 +1,33 @@
-# tests/conftest.py
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-import json
-from tests.factories import UserFactory
-from app.core.security import get_password_hash
-
+from httpx import AsyncClient
 from app.main import app
-from app.database import Base, get_db
+from app.database.base import Base
+from app.database.session import get_db
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"  # SQLiteで簡易に
+ASYNC_DB_URL = "sqlite+aiosqlite:///:memory:"
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+@pytest_asyncio.fixture(scope="function")
+async def async_client():
+    # テスト用engine/session
+    engine = create_async_engine(ASYNC_DB_URL, echo=False, future=True)
+    TestingSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+    # テスト用DBの初期化
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
 
-@pytest.fixture(scope="session", autouse=True)
-def create_test_db():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
+    # テスト用 get_db（sessionmaker直渡し版）を作る
+    async def override_get_db():
+        async with TestingSessionLocal() as session:
+            yield session
 
-
-@pytest.fixture()
-def db():
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
-@pytest.fixture()
-def client(db):
-    def override_get_db():
-        yield db
-
+    # ここでFastAPI側のget_dbを完全に上書き
     app.dependency_overrides[get_db] = override_get_db
-    return TestClient(app)
 
+    async with AsyncClient(app=app, base_url="http://test") as ac:
+        yield ac
 
-@pytest.fixture
-def auth_client(client, db):
-    from tests.factories import UserFactory
-
-    password = "adminpass"
-    admin_user = UserFactory(
-        username="adminuser",
-        email="admin@example.com",
-        hashed_password=get_password_hash(password),
-        is_admin=True,
-        sqlalchemy_session=db,  # ここで db セッションを渡す
-    )
-    db.commit()
-
-    response = client.post("/admin/token", data={
-        "username": admin_user.username,
-        "password": password,
-    })
-    assert response.status_code == 200
-    token = response.json()["access_token"]
-    client.headers = {
-        **client.headers,
-        "Authorization": f"Bearer {token}"
-    }
-    return client
+    await engine.dispose()
